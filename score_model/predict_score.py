@@ -49,6 +49,13 @@ def _load_params() -> dict:
             _params_cache = pickle.load(f)
     return _params_cache
 
+# Fallback params for unranked teams
+POISSON_FALLBACKS = {
+    "Bosnia-Herzegovina": {"attack": 0.9, "defense": 1.1},
+    "Curaçao":            {"attack": 0.6, "defense": 1.4},
+    "Iraq":               {"attack": 0.8, "defense": 1.2},
+}
+
 
 # ---------------------------------------------------------------------------
 # Core prediction
@@ -92,15 +99,10 @@ def predict_score(
     max_goals  = params.get("max_goals", 7)
 
     # Get team params with fallback
-    att_h = attack.get(home_team, DEFAULT_ATT)
-    def_h = defense.get(home_team, DEFAULT_DEF)
-    att_a = attack.get(away_team, DEFAULT_ATT)
-    def_a = defense.get(away_team, DEFAULT_DEF)
-
-    if home_team not in attack:
-        print(f"  [warn] No Poisson params for '{home_team}' — using defaults")
-    if away_team not in attack:
-        print(f"  [warn] No Poisson params for '{away_team}' — using defaults")
+    att_h = attack.get(home_team) or POISSON_FALLBACKS.get(home_team, {}).get("attack", DEFAULT_ATT)
+    def_h = defense.get(home_team) or POISSON_FALLBACKS.get(home_team, {}).get("defense", DEFAULT_DEF)
+    att_a = attack.get(away_team) or POISSON_FALLBACKS.get(away_team, {}).get("attack", DEFAULT_ATT)
+    def_a = defense.get(away_team) or POISSON_FALLBACKS.get(away_team, {}).get("defense", DEFAULT_DEF)
 
     # Expected goals
     lambda_h = att_h * def_a * global_avg * home_adv

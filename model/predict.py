@@ -23,6 +23,13 @@ import pandas as pd
 from pathlib import Path
 from model.train import SoftEnsemble, XGBWithWeight, LGBMWithWeight  # noqa: F401 — needed for pickle
 
+# Add this class near the top of model/predict.py, after the imports:
+class _Unpickler(pickle.Unpickler):
+    def find_class(self, module, name):
+        if module == "__main__":
+            module = "model.train"
+        return super().find_class(module, name)
+
 # ---------------------------------------------------------------------------
 # Load model + rankings (cached at module level — loaded once)
 # ---------------------------------------------------------------------------
@@ -34,13 +41,14 @@ MODEL_PATH = Path("model/model.pkl")
 DB_PATH    = Path("fifa.db")
 
 
+# Then change _load_model() to use it:
 def _load_model():
     global _model_cache
     if _model_cache is None:
         if not MODEL_PATH.exists():
             raise FileNotFoundError(f"Model not found: {MODEL_PATH}. Run model/train.py first.")
         with open(MODEL_PATH, "rb") as f:
-            _model_cache = pickle.load(f)
+            _model_cache = _Unpickler(f).load()
     return _model_cache
 
 
@@ -80,6 +88,18 @@ def _load_rank_cache():
     if current_team:
         rank_cache[current_team] = (dates, ranks)
         conf_cache[current_team] = confs[-1] if confs else None
+
+    # ── Manual overrides for WC 2026 teams missing from rankings ──
+    MANUAL_OVERRIDES = {
+        "Bosnia-Herzegovina": (61,  "UEFA"),
+        "Curaçao":            (86,  "CONCACAF"),
+        "Iraq":               (63,  "AFC"),
+    }
+    ref_date = [pd.Timestamp("2026-04-01")]
+    for team, (rank, conf) in MANUAL_OVERRIDES.items():
+        if team not in rank_cache:
+            rank_cache[team] = (ref_date, [rank])
+            conf_cache[team] = conf
 
     _rank_cache = rank_cache
     _conf_cache = conf_cache
@@ -130,10 +150,8 @@ def _build_feature_row(
 
     # Fallback for unknown teams — use median rank (100)
     if home_rank is None:
-        print(f"  [warn] No ranking found for '{home_team}' — using rank 100")
         home_rank = 100
     if away_rank is None:
-        print(f"  [warn] No ranking found for '{away_team}' — using rank 100")
         away_rank = 100
 
     rank_diff = float(home_rank) - float(away_rank)
