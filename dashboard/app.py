@@ -19,7 +19,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 
 # ── Config ───────────────────────────────────────────────────────────────────
-API_BASE = os.getenv("API_BASE_URL", "http://localhost:8000")
+API_BASE = os.getenv("API_BASE_URL", "https://fifa-predictor-api-xjnm.onrender.com")
 
 st.set_page_config(
     page_title = "FIFA WC 2026 Predictor",
