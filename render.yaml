@@ -12,26 +12,23 @@ services:
   - type: web
     name: fifa-predictor-api
     runtime: python
-    region: oregon        # closest free-tier region; change to frankfurt if EU preferred
+    region: oregon
     plan: free
 
     buildCommand: |
       pip install --upgrade pip
-      pip install -r requirements_api.txt
+      pip install -r requirements.txt
 
-    startCommand: >
-      python -m api.startup &&
-      uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 1
+    startCommand: uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 1
 
     healthCheckPath: /health
 
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11.0"
+        value: "3.13.0"
 
-      # GitHub repo for artifact downloads (api/startup.py)
       - key: GITHUB_REPO
-        value: mohdfahad20/FIFA-2026-Prediction   # ← update if you fork/rename
+        value: mohdfahad20/FIFA-2026-Prediction
 
       - key: ARTIFACTS_TAG
         value: latest-data
@@ -39,9 +36,8 @@ services:
       - key: ARTIFACT_NAME
         value: artifacts.zip
 
-      # Secrets — set these in the Render Dashboard, NOT here
       - key: GITHUB_TOKEN
-        sync: false        # set manually in Render dashboard
+        sync: false
 
       - key: FOOTBALL_DATA_API_KEY
-        sync: false        # set manually in Render dashboard
+        sync: false
