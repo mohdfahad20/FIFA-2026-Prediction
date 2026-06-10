@@ -32,9 +32,12 @@ on:
         default: "10000"
 
 env:
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: "3.13"
   DB_PATH: fifa.db
   ARTIFACTS_TAG: latest-data
+
+permissions:
+  contents: write
 
 jobs:
   update:
