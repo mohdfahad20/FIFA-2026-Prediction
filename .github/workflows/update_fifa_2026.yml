@@ -60,7 +60,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements_api.txt
+          pip install -r requirements.txt
 
       # -----------------------------------------------------------------------
       # 3. Restore artifacts from latest GitHub Release
