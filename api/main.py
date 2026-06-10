@@ -22,13 +22,30 @@ Run locally:
 import warnings
 warnings.filterwarnings("ignore")
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .routers import predict, simulation, standings, teams
-from .core.database    import get_conn
+from .core.database     import get_conn
 from .core.model_loader import get_model, get_poisson
+from .startup           import on_startup
+
+# ---------------------------------------------------------------------------
+# Lifespan — replaces deprecated @app.on_event("startup")
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ---- startup ----
+    on_startup()                     # download artifacts from GitHub Release (Render only)
+    print("[startup] Loading models into cache...")
+    get_model()
+    get_poisson()
+    print("[startup] Models ready.")
+    yield
+    # ---- shutdown (nothing needed) ----
 
 # ---------------------------------------------------------------------------
 # App
@@ -37,6 +54,7 @@ app = FastAPI(
     title       = "FIFA WC 2026 Prediction API",
     description = "ML + Poisson ensemble for match prediction and tournament simulation",
     version     = "1.0.0",
+    lifespan    = lifespan,
 )
 
 app.add_middleware(
@@ -46,16 +64,6 @@ app.add_middleware(
     allow_methods     = ["*"],
     allow_headers     = ["*"],
 )
-
-# ---------------------------------------------------------------------------
-# Startup — pre-load models
-# ---------------------------------------------------------------------------
-@app.on_event("startup")
-async def startup():
-    print("[startup] Loading models into cache...")
-    get_model()
-    get_poisson()
-    print("[startup] Models ready.")
 
 # ---------------------------------------------------------------------------
 # Routers

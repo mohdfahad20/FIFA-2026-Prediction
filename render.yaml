@@ -1,0 +1,47 @@
+# render.yaml
+# Deploy the FIFA 2026 FastAPI backend on Render (free tier).
+#
+# Setup steps:
+#   1. Push this file to your repo root.
+#   2. In Render Dashboard → New → Blueprint → connect your repo.
+#   3. Add environment variables (see envVars below).
+#   4. After first deploy, copy the service's Deploy Hook URL and store it
+#      as RENDER_DEPLOY_HOOK_FIFA in your GitHub repo secrets.
+
+services:
+  - type: web
+    name: fifa-predictor-api
+    runtime: python
+    region: oregon        # closest free-tier region; change to frankfurt if EU preferred
+    plan: free
+
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r requirements_api.txt
+
+    startCommand: >
+      python -m api.startup &&
+      uvicorn api.main:app --host 0.0.0.0 --port $PORT --workers 1
+
+    healthCheckPath: /health
+
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
+
+      # GitHub repo for artifact downloads (api/startup.py)
+      - key: GITHUB_REPO
+        value: mohdfahad20/FIFA-2026-Prediction   # ← update if you fork/rename
+
+      - key: ARTIFACTS_TAG
+        value: latest-data
+
+      - key: ARTIFACT_NAME
+        value: artifacts.zip
+
+      # Secrets — set these in the Render Dashboard, NOT here
+      - key: GITHUB_TOKEN
+        sync: false        # set manually in Render dashboard
+
+      - key: FOOTBALL_DATA_API_KEY
+        sync: false        # set manually in Render dashboard

@@ -1,0 +1,199 @@
+# .github/workflows/update_fifa_2026.yml
+#
+# Nightly pipeline: scrape results → rebuild features → retrain Poisson →
+# re-simulate 10k → package artifacts → upload to GitHub Release → redeploy Render.
+#
+# Schedule: 02:00 UTC daily  (07:30 IST — comfortably after all day matches finish)
+#
+# Required GitHub Secrets:
+#   FOOTBALL_DATA_API_KEY    — football-data.org free API key
+#   RENDER_DEPLOY_HOOK_FIFA  — Render service deploy hook URL
+#   GITHUB_TOKEN             — auto-provided (used for Release upload)
+#
+# Artifact layout inside artifacts.zip:
+#   fifa.db
+#   model/model.pkl
+#   score_model/poisson_params.pkl
+
+name: Update FIFA 2026 Data
+
+on:
+  schedule:
+    - cron: "0 2 * * *"       # 02:00 UTC daily
+  workflow_dispatch:            # allow manual trigger from GitHub UI
+    inputs:
+      full_scrape:
+        description: "Scrape full tournament window (not just yesterday)"
+        type: boolean
+        default: false
+      n_simulations:
+        description: "Number of Monte Carlo simulations"
+        type: string
+        default: "10000"
+
+env:
+  PYTHON_VERSION: "3.11"
+  DB_PATH: fifa.db
+  ARTIFACTS_TAG: latest-data
+
+jobs:
+  update:
+    name: Scrape · Features · Simulate · Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      # -----------------------------------------------------------------------
+      # 1. Checkout
+      # -----------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # 2. Python setup
+      # -----------------------------------------------------------------------
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements_api.txt
+
+      # -----------------------------------------------------------------------
+      # 3. Restore artifacts from latest GitHub Release
+      #    (preserves fifa.db with real match results + trained model.pkl)
+      # -----------------------------------------------------------------------
+      - name: Download latest artifacts
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "Looking for release: $ARTIFACTS_TAG"
+          RELEASE_JSON=$(gh release view "$ARTIFACTS_TAG" --json assets 2>/dev/null || echo '{"assets":[]}')
+          HAS_ASSET=$(echo "$RELEASE_JSON" | python3 -c "
+          import sys, json
+          assets = json.load(sys.stdin).get('assets', [])
+          print('yes' if any(a['name']=='artifacts.zip' for a in assets) else 'no')
+          ")
+
+          if [ "$HAS_ASSET" = "yes" ]; then
+            echo "Downloading artifacts.zip from release..."
+            gh release download "$ARTIFACTS_TAG" --pattern "artifacts.zip" --output artifacts.zip
+            unzip -o artifacts.zip -d .
+            echo "Restored files:"
+            ls -lh fifa.db model/model.pkl score_model/poisson_params.pkl 2>/dev/null || true
+          else
+            echo "No prior release found — will fail if model.pkl is missing."
+            echo "Fix: manually trigger with a seed release first."
+          fi
+
+      # -----------------------------------------------------------------------
+      # 4. Scrape today's WC results
+      # -----------------------------------------------------------------------
+      - name: Scrape match results
+        env:
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+        run: |
+          EXTRA=""
+          if [ "${{ github.event.inputs.full_scrape }}" = "true" ]; then
+            EXTRA="--full"
+          fi
+          python -m scraper.scraper --db "$DB_PATH" $EXTRA
+
+      # -----------------------------------------------------------------------
+      # 5. Rebuild features
+      # -----------------------------------------------------------------------
+      - name: Rebuild features table
+        run: python -m features.features --db "$DB_PATH"
+
+      # -----------------------------------------------------------------------
+      # 6. Retrain Poisson model (fast — no grid search)
+      # -----------------------------------------------------------------------
+      - name: Retrain Poisson score model
+        run: python -m score_model.train_poisson --db "$DB_PATH"
+
+      # -----------------------------------------------------------------------
+      # 7. Re-run tournament simulation
+      # -----------------------------------------------------------------------
+      - name: Run Monte Carlo simulation
+        run: |
+          N="${{ github.event.inputs.n_simulations }}"
+          N="${N:-10000}"
+          python -m simulate.simulate --db "$DB_PATH" --n "$N"
+
+      # -----------------------------------------------------------------------
+      # 8. Package artifacts
+      #    Preserves directory structure so paths match local layout
+      # -----------------------------------------------------------------------
+      - name: Package artifacts
+        run: |
+          zip artifacts.zip \
+            fifa.db \
+            model/model.pkl \
+            score_model/poisson_params.pkl
+          echo "Artifact size: $(du -sh artifacts.zip)"
+          echo "Contents:"
+          unzip -l artifacts.zip
+
+      # -----------------------------------------------------------------------
+      # 9. Upload to GitHub Release (delete + recreate "latest-data" tag)
+      # -----------------------------------------------------------------------
+      - name: Upload to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete "$ARTIFACTS_TAG" --yes 2>/dev/null || true
+          gh release create "$ARTIFACTS_TAG" \
+            artifacts.zip \
+            --title "Latest Data ($(date -u +'%Y-%m-%d %H:%M UTC'))" \
+            --notes "Nightly artifact refresh — models + DB for FIFA WC 2026 API." \
+            --prerelease
+          echo "Release updated: $ARTIFACTS_TAG"
+
+      # -----------------------------------------------------------------------
+      # 10. Trigger Render redeploy
+      # -----------------------------------------------------------------------
+      - name: Trigger Render redeploy
+        env:
+          RENDER_DEPLOY_HOOK_FIFA: ${{ secrets.RENDER_DEPLOY_HOOK_FIFA }}
+        run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_FIFA" ]; then
+            echo "RENDER_DEPLOY_HOOK_FIFA not set — skipping redeploy."
+            exit 0
+          fi
+          echo "Triggering Render deploy..."
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "$RENDER_DEPLOY_HOOK_FIFA")
+          echo "Render response: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" != "200" ] && [ "$HTTP_STATUS" != "201" ]; then
+            echo "Warning: unexpected status $HTTP_STATUS from Render deploy hook."
+          fi
+
+      # -----------------------------------------------------------------------
+      # 11. Summary
+      # -----------------------------------------------------------------------
+      - name: Print pipeline summary
+        run: |
+          echo "## FIFA 2026 Pipeline Complete" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Scrape results | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rebuild features | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Retrain Poisson | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Monte Carlo sim | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Artifacts uploaded | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Render redeployed | ✅ |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Run at: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> "$GITHUB_STEP_SUMMARY"
+          DB_ROWS=$(python3 -c "
+          import sqlite3
+          conn = sqlite3.connect('$DB_PATH')
+          wc = conn.execute(\"SELECT COUNT(*) FROM matches WHERE tournament='FIFA World Cup'\").fetchone()[0]
+          sims = conn.execute('SELECT MAX(n_simulations) FROM simulation_results').fetchone()[0]
+          print(f'WC matches in DB: {wc} | Last sim n: {sims}')
+          conn.close()
+          " 2>/dev/null || echo "DB stats unavailable")
+          echo "$DB_ROWS" >> "$GITHUB_STEP_SUMMARY"
