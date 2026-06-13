@@ -406,7 +406,8 @@ def simulate_tournament(completed: dict, verbose: bool = False) -> str:
     if verbose:
         print(f"  FINAL: {finalist1} vs {finalist2} → 🏆 {champion}")
 
-    return champion
+    r32_teams = list(r32_winners.values())
+    return champion, r32_teams
 
 
 # ---------------------------------------------------------------------------
@@ -446,26 +447,36 @@ def run_simulations(db_path: str, n: int = 10000,
 
     print(f"[sim] Running {n:,} simulations...")
     champion_counts = defaultdict(int)
+    r32_counts      = defaultdict(int)
 
     for i in range(n):
         if i % 1000 == 0 and i > 0:
             print(f"  ... {i:,} / {n:,} done")
-        champion = simulate_tournament(completed, verbose=(verbose and i == 0))
+        champion, r32_teams = simulate_tournament(completed, verbose=(verbose and i == 0))
         champion_counts[champion] += 1
+        for team in r32_teams:
+            r32_counts[team] += 1
 
+    # ← 4 spaces indent, OUTSIDE the for loop, INSIDE run_simulations
     all_teams = [t for teams in GROUPS.values() for t in teams]
-    results   = {
+
+    results = {
         team: round(champion_counts[team] / n, 4)
         for team in all_teams
     }
     results = dict(sorted(results.items(), key=lambda x: x[1], reverse=True))
-    return results, completed
+
+    r32_qualify = {
+        team: round(r32_counts[team] / n, 4)
+        for team in all_teams
+    }
+    return results, r32_qualify, completed
 
 
 # ---------------------------------------------------------------------------
 # Save + print
 # ---------------------------------------------------------------------------
-def save_results(results: dict, db_path: str,
+def save_results(results: dict, r32_qualify: dict, db_path: str,
                  n: int, completed: dict) -> None:
     conn   = sqlite3.connect(db_path)
     run_id = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -475,7 +486,7 @@ def save_results(results: dict, db_path: str,
         (run_id, run_at, n_simulations, matches_played, matches_remaining, results_json)
         VALUES (?, ?, ?, ?, ?, ?)
     """, (run_id, now, n, len(completed), 104 - len(completed),
-          json.dumps(results)))
+          json.dumps({"win": results, "r32": r32_qualify})))
     conn.commit()
     conn.close()
     print(f"[save] Run {run_id} saved to simulation_results table.")
@@ -508,9 +519,9 @@ def main():
 
     print(f"[init] DB: {Path(args.db).resolve()}\n")
 
-    results, completed = run_simulations(args.db, n=args.n, verbose=args.verbose)
+    results, r32_qualify, completed = run_simulations(args.db, n=args.n, verbose=args.verbose)
     print_summary(results, args.n)
-    save_results(results, args.db, args.n, completed)
+    save_results(results, r32_qualify, args.db, args.n, completed)
     print(f"\n[done] Next: wire FastAPI backend (Phase 6)")
 
 
