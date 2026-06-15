@@ -6,12 +6,13 @@ Calls FastAPI backend (for Streamlit Cloud deployment).
 """
 
 import os
+import time
 import requests
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import time
+from datetime import datetime, timedelta, timezone
 
 API_BASE = os.getenv("API_BASE_URL", "https://fifa-predictor-api-xjnm.onrender.com")
 
@@ -47,7 +48,6 @@ hr { border-color:var(--border) !important; }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Constants ─────────────────────────────────────────────────────────────────
 ALL_TEAMS = sorted([
     "Argentina","Algeria","Austria","Australia","Belgium","Bosnia and Herzegovina",
     "Brazil","Canada","Cape Verde","Colombia","Croatia","Curaçao","Czechia",
@@ -81,7 +81,6 @@ DB_NAMES = {
 }
 def dbn(t): return DB_NAMES.get(t, t)
 
-# ── API helpers ───────────────────────────────────────────────────────────────
 @st.cache_data(ttl=300)
 def api_get(path, params=None):
     for attempt in range(3):
@@ -103,13 +102,13 @@ def prob_bar(label, prob, color):
     </div>
     """, unsafe_allow_html=True)
 
-# ── Header ────────────────────────────────────────────────────────────────────
-# ── Backend wake-up handler (Render free tier sleeps after 15 mins) ──────────
+# ── Backend wake-up handler ───────────────────────────────────────────────────
 health = api_get("/health")
 if not health:
     st.warning("🚀 Backend is waking up on Render... please wait 30 seconds")
     time.sleep(5)
     st.rerun()
+
 st.markdown(f"""
 <div class="wc-header">
     <h1>⚽ FIFA WC 2026</h1>
@@ -117,17 +116,14 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ── Top stats ─────────────────────────────────────────────────────────────────
 sim = api_get("/simulation") or {}
-
-# Parse results — handle both new {"win":..., "r32":...} and legacy flat dict
 _raw = sim.get("results", {})
 if isinstance(_raw, dict) and "win" in _raw:
-    sim_results  = _raw["win"]
-    sim_r32      = _raw.get("r32", {})
+    sim_results = _raw["win"]
+    sim_r32     = _raw.get("r32", {})
 else:
-    sim_results  = _raw
-    sim_r32      = {}
+    sim_results = _raw
+    sim_r32     = {}
 
 if sim_results:
     top_team  = list(sim_results.keys())[0]
@@ -146,10 +142,10 @@ if sim_results:
 
 st.markdown("<hr>", unsafe_allow_html=True)
 
-# ── Tabs ──────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🏆 Group Standings",
     "🔑 Qualification",
+    "📅 Predictions",
     "🎯 Match Predictor",
     "⚽ Score Predictor",
     "📊 Tournament Odds",
@@ -187,12 +183,11 @@ with tab1:
                 unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 2 — QUALIFICATION ODDS  (NEW)
+# TAB 2 — QUALIFICATION ODDS
 # ═══════════════════════════════════════════════════════════════
 with tab2:
     st.markdown("### Round of 32 Qualification Probabilities")
     st.caption(f"Based on {sim.get('n_simulations', 0):,} simulations · Chance each team advances from group stage")
-
     if not sim_r32:
         st.warning("Qualification data not available — re-run the pipeline to generate it.")
     else:
@@ -204,14 +199,12 @@ with tab2:
             ("#ef4444", "#1f0a0a", "#2e0f0f"),
         ]
         LABELS = ["1st", "2nd", "3rd", "4th"]
-
         for i, (grp, teams) in enumerate(sorted(GROUPS.items())):
             rows = []
             for team in teams:
                 prob = sim_r32.get(dbn(team), sim_r32.get(team, 0.0))
                 rows.append({"team": team, "prob": prob})
             rows.sort(key=lambda x: x["prob"], reverse=True)
-
             with cols[i % 3]:
                 st.markdown(f"**Group {grp}**")
                 for j, row in enumerate(rows):
@@ -220,8 +213,7 @@ with tab2:
                     st.markdown(f"""
                     <div style="background:{bg};border:1px solid {border};border-radius:8px;
                                 padding:0.6rem 0.75rem;margin-bottom:0.4rem">
-                        <div style="display:flex;justify-content:space-between;
-                                    align-items:center;margin-bottom:0.3rem">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.3rem">
                             <span style="font-size:0.85rem;font-weight:600;color:#f0f0f0">{row['team']}</span>
                             <span style="font-size:0.8rem;font-weight:700;color:{bar_color}">{pct:.1f}%</span>
                         </div>
@@ -234,9 +226,141 @@ with tab2:
                 st.markdown("<br>", unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 3 — MATCH PREDICTOR
+# TAB 3 — PREDICTIONS  (NEW)
 # ═══════════════════════════════════════════════════════════════
 with tab3:
+    today_utc     = datetime.now(timezone.utc).date()
+    tomorrow_utc  = today_utc + timedelta(days=1)
+    yesterday_utc = today_utc - timedelta(days=1)
+
+    st.markdown("### 📅 Match Predictions")
+    st.caption("Tomorrow's predictions · Yesterday's results vs actual")
+
+    preds_data = api_get("/predictions") or {}
+    tomorrow_rows  = preds_data.get("tomorrow", [])
+    yesterday_rows = preds_data.get("yesterday", [])
+
+    # ── Tomorrow ─────────────────────────────────────────────────────────────
+    st.markdown(f"### 🔮 Tomorrow — {tomorrow_utc.strftime('%B %d, %Y')}")
+    if not tomorrow_rows:
+        st.info("No predictions yet for tomorrow. They will appear after tonight's pipeline run (02:00 UTC).")
+    else:
+        cols = st.columns(2)
+        for i, r in enumerate(tomorrow_rows):
+            hw = r["pred_home_win"]
+            dr = r["pred_draw"]
+            aw = r["pred_away_win"]
+            fav_prob = max(hw, dr, aw)
+            fav = (r["home_team"] if hw == fav_prob
+                   else r["away_team"] if aw == fav_prob
+                   else "Draw")
+            with cols[i % 2]:
+                st.markdown(f"""
+                <div style="background:var(--card);border:1px solid var(--border);border-top:3px solid #00d26a;
+                            border-radius:10px;padding:1.2rem;margin-bottom:1rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                        <span style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">{r['stage']}</span>
+                        <span style="font-size:0.7rem;color:var(--muted);">{r['date']}</span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+                        <div style="text-align:center;flex:1;">
+                            <div style="font-size:0.95rem;font-weight:700;color:var(--text);">{r['home_team']}</div>
+                            <div style="font-size:1.4rem;font-weight:700;color:#00d26a;">{hw:.0%}</div>
+                            <div style="font-size:0.7rem;color:var(--muted);">xG {r['pred_home_xg']}</div>
+                        </div>
+                        <div style="text-align:center;padding:0 0.5rem;">
+                            <div style="font-size:0.8rem;font-weight:700;color:var(--muted);">VS</div>
+                            <div style="font-size:0.75rem;font-weight:600;color:#f59e0b;margin-top:0.2rem;">Draw {dr:.0%}</div>
+                        </div>
+                        <div style="text-align:center;flex:1;">
+                            <div style="font-size:0.95rem;font-weight:700;color:var(--text);">{r['away_team']}</div>
+                            <div style="font-size:1.4rem;font-weight:700;color:#ef4444;">{aw:.0%}</div>
+                            <div style="font-size:0.7rem;color:var(--muted);">xG {r['pred_away_xg']}</div>
+                        </div>
+                    </div>
+                    <div style="background:#1e1e2e;border-radius:6px;padding:0.5rem 0.75rem;
+                                display:flex;justify-content:space-between;align-items:center;">
+                        <span style="font-size:0.8rem;color:var(--muted);">
+                            🎯 Likely score: <strong style="color:var(--text);">{r['pred_scoreline']}</strong>
+                        </span>
+                        <span style="font-size:0.75rem;font-weight:700;color:#00d26a;">
+                            Tip: {fav} ({fav_prob:.0%})
+                        </span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # ── Yesterday ─────────────────────────────────────────────────────────────
+    st.markdown("<hr>", unsafe_allow_html=True)
+    st.markdown(f"### 📊 Yesterday — {yesterday_utc.strftime('%B %d, %Y')} · Prediction vs Actual")
+    if not yesterday_rows:
+        st.info("No completed predictions for yesterday yet.")
+    else:
+        cols2 = st.columns(2)
+        for i, r in enumerate(yesterday_rows):
+            correct    = r.get("was_correct")
+            has_actual = r.get("actual_home") is not None
+
+            if has_actual:
+                border_color = "#00d26a" if correct else "#ef4444"
+                badge        = "✅ CORRECT" if correct else "❌ WRONG"
+                badge_color  = "#00d26a"  if correct else "#ef4444"
+                badge_bg     = "#0d1f16"  if correct else "#1f0a0a"
+            else:
+                border_color = "#1e1e2e"
+                badge        = "⏳ PENDING"
+                badge_color  = "#f59e0b"
+                badge_bg     = "#1f1800"
+
+            pred_label = (r["home_team"]  if r["pred_winner"] == "home"
+                          else r["away_team"] if r["pred_winner"] == "away"
+                          else "Draw")
+
+            actual_score_html = (
+                f'<div style="font-size:0.9rem;font-weight:700;color:var(--text);">'
+                f'{r["actual_home"]} – {r["actual_away"]}</div>'
+                f'<div style="font-size:0.75rem;color:var(--muted);">'
+                f'{(r.get("actual_result") or "").capitalize()}</div>'
+                if has_actual else
+                '<div style="font-size:0.85rem;color:var(--muted);">Pending</div>'
+            )
+            actual_bg = (
+                "#0d1f16" if (correct and has_actual)
+                else "#1f0a0a" if (has_actual and not correct)
+                else "#1e1e2e"
+            )
+
+            with cols2[i % 2]:
+                st.markdown(f"""
+                <div style="background:var(--card);border:1px solid var(--border);border-top:3px solid {border_color};
+                            border-radius:10px;padding:1.2rem;margin-bottom:1rem;">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.6rem;">
+                        <span style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">{r['stage']}</span>
+                        <span style="background:{badge_bg};color:{badge_color};font-size:0.7rem;
+                                     font-weight:700;padding:0.2rem 0.6rem;border-radius:999px;">{badge}</span>
+                    </div>
+                    <div style="font-size:1rem;font-weight:700;color:var(--text);text-align:center;margin-bottom:0.75rem;">
+                        {r['home_team']} vs {r['away_team']}
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem;">
+                        <div style="background:#1e1e2e;border-radius:8px;padding:0.6rem;text-align:center;">
+                            <div style="font-size:0.65rem;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:0.3rem;">🔮 Predicted</div>
+                            <div style="font-size:0.9rem;font-weight:700;color:var(--text);">{pred_label}</div>
+                            <div style="font-size:0.75rem;color:var(--muted);">Score: {r['pred_scoreline']}</div>
+                            <div style="font-size:0.7rem;color:var(--muted);">xG {r['pred_home_xg']} – {r['pred_away_xg']}</div>
+                        </div>
+                        <div style="background:{actual_bg};border-radius:8px;padding:0.6rem;text-align:center;">
+                            <div style="font-size:0.65rem;font-weight:600;color:var(--muted);text-transform:uppercase;margin-bottom:0.3rem;">⚽ Actual</div>
+                            {actual_score_html}
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+# ═══════════════════════════════════════════════════════════════
+# TAB 4 — MATCH PREDICTOR
+# ═══════════════════════════════════════════════════════════════
+with tab4:
     st.markdown("### Match Outcome Predictor")
     st.caption("Uses ML ensemble + Dixon-Coles Poisson model (50/50 weighted)")
     col1,col2,col3 = st.columns([2,1,2])
@@ -274,9 +398,9 @@ with tab3:
             """, unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 4 — SCORE PREDICTOR
+# TAB 5 — SCORE PREDICTOR
 # ═══════════════════════════════════════════════════════════════
-with tab4:
+with tab5:
     st.markdown("### Score Predictor")
     st.caption("Dixon-Coles Poisson model with time-decayed attack/defense parameters")
     col1,col2,col3 = st.columns([2,1,2])
@@ -315,9 +439,9 @@ with tab4:
             prob_bar(f"{s_away} Win", result["loss_prob"], "#ef4444")
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 5 — TOURNAMENT ODDS
+# TAB 6 — TOURNAMENT ODDS
 # ═══════════════════════════════════════════════════════════════
-with tab5:
+with tab6:
     st.markdown("### Tournament Win Probabilities")
     st.caption(f"Based on {sim.get('n_simulations',0):,} Monte Carlo simulations")
     if sim_results:
@@ -363,9 +487,9 @@ with tab5:
         st.info("Run the simulation first.")
 
 # ═══════════════════════════════════════════════════════════════
-# TAB 6 — MODEL INFO
+# TAB 7 — MODEL INFO
 # ═══════════════════════════════════════════════════════════════
-with tab6:
+with tab7:
     st.markdown("### How the Models Work")
     col1,col2 = st.columns(2)
     with col1:

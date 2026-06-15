@@ -161,6 +161,23 @@ def _dc_correction(i: int, j: int,
     elif i == 1 and j == 1: return 1 - rho
     else:                   return 1.0
 
+def most_likely_score_for_outcome(
+    top_scorelines: list[dict], outcome: str
+) -> str:
+    """
+    Returns the most likely scoreline conditioned on outcome.
+    outcome: "home" (home win), "draw", "away" (away win)
+    """
+    for entry in top_scorelines:
+        h, a = map(int, entry["score"].split("-"))
+        if outcome == "home" and h > a:
+            return entry["score"]
+        elif outcome == "draw" and h == a:
+            return entry["score"]
+        elif outcome == "away" and a > h:
+            return entry["score"]
+    return top_scorelines[0]["score"]  # fallback
+
 
 # ---------------------------------------------------------------------------
 # CLI

@@ -105,6 +105,14 @@ jobs:
           fi
           python -m scraper.scraper --db "$DB_PATH" $EXTRA
 
+      # ── ADD THIS STEP BETWEEN "Scrape match results" AND "Rebuild features" ──────
+      # Step 4b — Predict tomorrow's matches + fill yesterday's actuals
+
+      - name: Predict upcoming matches
+        env:
+          FOOTBALL_DATA_API_KEY: ${{ secrets.FOOTBALL_DATA_API_KEY }}
+        run: python predict_upcoming.py --db "$DB_PATH"
+
       # -----------------------------------------------------------------------
       # 5. Rebuild features
       # -----------------------------------------------------------------------
