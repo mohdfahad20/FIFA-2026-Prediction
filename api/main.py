@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import predict, simulation, standings, teams
+from .routers import predict, simulation, standings, teams, predictions
 from .core.database     import get_conn
 from .core.model_loader import get_model, get_poisson
 from .startup           import on_startup
@@ -72,6 +72,8 @@ app.include_router(predict.router)
 app.include_router(simulation.router)
 app.include_router(standings.router)
 app.include_router(teams.router)
+app.include_router(predictions.router)
+
 
 # ---------------------------------------------------------------------------
 # Health
