@@ -2,17 +2,20 @@
 run_pipeline.py
 ===============
 Runs the full FIFA WC 2026 local pipeline in sequence:
-  1. Load historical data (CSVs → fifa.db)
-  2. Build features table
-  3. Train ML ensemble model
-  4. Train Poisson score model
-  5. Run Monte Carlo simulation
+  1. Load historical data (CSVs → fifa.db)        [optional, --skip-data]
+  2. Scrape live WC 2026 results                  [optional, --skip-scrape]
+  3. Predict upcoming match + fill actuals        [optional, --skip-predict]
+  4. Build features table
+  5. Train ML ensemble model                       [optional, --skip-ml]
+  6. Train Poisson score model
+  7. Run Monte Carlo simulation                    [optional, --skip-sim]
 
 Usage:
-    python run_pipeline.py                        # full pipeline, all defaults
-    python run_pipeline.py --skip-data            # skip step 1 (DB already loaded)
-    python run_pipeline.py --skip-data --skip-ml  # only retrain Poisson + simulate
-    python run_pipeline.py --n 1000               # faster sim for testing (default 10000)
+    python run_pipeline.py                              # full pipeline, all defaults
+    python run_pipeline.py --skip-data                  # skip step 1 (DB already loaded)
+    python run_pipeline.py --skip-data --skip-ml         # only scrape + predict + Poisson + sim
+    python run_pipeline.py --skip-data --skip-ml --n 1000  # faster sim for testing
+    python run_pipeline.py --skip-data --skip-ml --skip-scrape --skip-predict  # sim only
 
 All steps are timed and a summary is printed at the end.
 """
@@ -57,9 +60,13 @@ def main():
     parser.add_argument("--rankings",     default="data/fifa_ranking-2026-04-01.csv")
     parser.add_argument("--n-iter",       default="40",   help="ML tuning iterations")
     parser.add_argument("--n",            default="10000", help="Monte Carlo simulations")
+    parser.add_argument("--full-scrape",  action="store_true",
+                        help="Scrape full tournament window (June 11 - July 19) instead of just yesterday/today")
     parser.add_argument("--skip-data",    action="store_true", help="Skip step 1 (load_historical_data)")
-    parser.add_argument("--skip-ml",      action="store_true", help="Skip step 3 (model.train)")
-    parser.add_argument("--skip-sim",     action="store_true", help="Skip step 5 (simulate)")
+    parser.add_argument("--skip-scrape",  action="store_true", help="Skip step 2 (scraper)")
+    parser.add_argument("--skip-predict", action="store_true", help="Skip step 3 (predict_upcoming)")
+    parser.add_argument("--skip-ml",      action="store_true", help="Skip step 5 (model.train)")
+    parser.add_argument("--skip-sim",     action="store_true", help="Skip step 7 (simulate)")
     args = parser.parse_args()
 
     py = sys.executable   # use same python/venv that launched this script
@@ -84,7 +91,32 @@ def main():
         print("\n[SKIP] Step 1 — load_historical_data (--skip-data)")
 
     # ------------------------------------------------------------------
-    # Step 2 — Build features
+    # Step 2 — Scrape live WC 2026 results
+    # ------------------------------------------------------------------
+    if not args.skip_scrape:
+        scrape_cmd = [py, "-m", "scraper.scraper", "--db", args.db]
+        if args.full_scrape:
+            scrape_cmd.append("--full")
+        timings["Scrape results"] = run(
+            "Scrape live WC 2026 results (football-data.org)",
+            scrape_cmd,
+        )
+    else:
+        print("\n[SKIP] Step 2 — scraper (--skip-scrape)")
+
+    # ------------------------------------------------------------------
+    # Step 3 — Predict upcoming match + fill actuals for completed ones
+    # ------------------------------------------------------------------
+    if not args.skip_predict:
+        timings["Predict upcoming"] = run(
+            "Predict tomorrow's match + fill yesterday's actuals",
+            [py, "predict_upcoming.py", "--db", args.db],
+        )
+    else:
+        print("\n[SKIP] Step 3 — predict_upcoming (--skip-predict)")
+
+    # ------------------------------------------------------------------
+    # Step 4 — Build features
     # ------------------------------------------------------------------
     timings["Features"] = run(
         "Build features table",
@@ -92,7 +124,7 @@ def main():
     )
 
     # ------------------------------------------------------------------
-    # Step 3 — Train ML model
+    # Step 5 — Train ML model
     # ------------------------------------------------------------------
     if not args.skip_ml:
         timings["ML model"] = run(
@@ -100,10 +132,10 @@ def main():
             [py, "-m", "model.train", "--db", args.db, "--n-iter", args.n_iter],
         )
     else:
-        print("\n[SKIP] Step 3 — model.train (--skip-ml)")
+        print("\n[SKIP] Step 5 — model.train (--skip-ml)")
 
     # ------------------------------------------------------------------
-    # Step 4 — Train Poisson model
+    # Step 6 — Train Poisson model
     # ------------------------------------------------------------------
     timings["Poisson model"] = run(
         "Train Poisson score model",
@@ -111,7 +143,7 @@ def main():
     )
 
     # ------------------------------------------------------------------
-    # Step 5 — Simulate
+    # Step 7 — Simulate
     # ------------------------------------------------------------------
     if not args.skip_sim:
         timings["Simulation"] = run(
@@ -119,7 +151,7 @@ def main():
             [py, "-m", "simulate.simulate", "--db", args.db, "--n", args.n],
         )
     else:
-        print("\n[SKIP] Step 5 — simulate (--skip-sim)")
+        print("\n[SKIP] Step 7 — simulate (--skip-sim)")
 
     # ------------------------------------------------------------------
     # Summary

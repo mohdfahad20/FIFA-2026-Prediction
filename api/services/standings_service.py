@@ -37,8 +37,11 @@ def get_standings() -> dict:
         standings = []
         for team in teams:
             dbt = db_name(team)
+
+            # Fetch home_team too, so we know per-row whether this team was home or away
+            # WITHOUT a broken re-query that always returns True
             rows = conn.execute("""
-                SELECT home_score, away_score, result
+                SELECT home_team, away_team, home_score, away_score, result
                 FROM matches
                 WHERE date >= '2026-06-11'
                   AND tournament = 'FIFA World Cup'
@@ -49,21 +52,27 @@ def get_standings() -> dict:
             pts, gd, gf, ga, played, w, d, l = 0, 0, 0, 0, 0, 0, 0, 0
             for row in rows:
                 played += 1
-                is_home = conn.execute(
-                    "SELECT home_team FROM matches WHERE home_team=? AND date>='2026-06-11'",
-                    (dbt,)
-                ).fetchone() is not None
+
+                # Correct per-row home/away check — no second query, no global bug
+                is_home = (row["home_team"] == dbt)
 
                 hs, as_ = row["home_score"], row["away_score"]
+                scored, conceded = (hs, as_) if is_home else (as_, hs)
+
                 if row["result"] == "win":
-                    pts += 3; w += 1
-                    scored, conceded = (hs, as_) if is_home else (as_, hs)
-                elif row["result"] == "draw":
+                    team_won = is_home
+                elif row["result"] == "loss":
+                    team_won = not is_home
+                else:
+                    team_won = None  # draw
+
+                if row["result"] == "draw":
                     pts += 1; d += 1
-                    scored, conceded = hs, as_
+                elif team_won:
+                    pts += 3; w += 1
                 else:
                     l += 1
-                    scored, conceded = (hs, as_) if is_home else (as_, hs)
+
                 gf += scored; ga += conceded; gd += scored - conceded
 
             standings.append({
