@@ -13,6 +13,7 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta, timezone
+import json
 
 API_BASE = os.getenv("API_BASE_URL", "https://fifa-predictor-api-xjnm.onrender.com")
 
