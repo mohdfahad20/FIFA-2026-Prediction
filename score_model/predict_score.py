@@ -178,6 +178,47 @@ def most_likely_score_for_outcome(
             return entry["score"]
     return top_scorelines[0]["score"]  # fallback
 
+# ═══════════════════════════════════════════════════════════════
+# ADD THIS to score_model/predict_score.py
+# Place it right after the existing most_likely_score_for_outcome()
+# function (or after _dc_correction if that function doesn't exist yet).
+# ═══════════════════════════════════════════════════════════════
+
+def top_scorelines_for_outcome(
+    top_scorelines: list[dict], outcome: str, n: int = 3
+) -> list[dict]:
+    """
+    Returns the top N most likely scorelines conditioned on outcome.
+    outcome: "home" (home win), "draw", "away" (away win)
+
+    Re-normalises probabilities so they sum to 1.0 WITHIN the outcome
+    (e.g. if showing "home win" scorelines, the 3 returned probabilities
+    reflect relative likelihood among home-win scorelines specifically,
+    not the global match probability).
+
+    Returns: [{"score": "2-1", "probability": 0.34}, ...]
+    """
+    matching = []
+    for entry in top_scorelines:
+        h, a = map(int, entry["score"].split("-"))
+        if outcome == "home" and h > a:
+            matching.append(entry)
+        elif outcome == "draw" and h == a:
+            matching.append(entry)
+        elif outcome == "away" and a > h:
+            matching.append(entry)
+
+    if not matching:
+        return [top_scorelines[0]] if top_scorelines else []
+
+    # Re-normalise within this outcome group
+    total = sum(e["probability"] for e in matching)
+    normalised = [
+        {"score": e["score"], "probability": round(e["probability"] / total, 4)}
+        for e in matching[:n]
+    ]
+    return normalised
+
 
 # ---------------------------------------------------------------------------
 # CLI

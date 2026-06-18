@@ -323,13 +323,14 @@ with tab3:
 
     # ── Tomorrow's predictions ───────────────────────────────────────────────
     tomorrow_rows = conn_p.execute("""
-        SELECT home_team, away_team, stage, date,
-               pred_home_win, pred_draw, pred_away_win,
-               pred_home_xg, pred_away_xg, pred_scoreline, pred_winner
-        FROM predictions
-        WHERE date = ?
-        ORDER BY home_team
-    """, (str(tomorrow_utc),)).fetchall()
+    SELECT home_team, away_team, stage, date,
+           pred_home_win, pred_draw, pred_away_win,
+           pred_home_xg, pred_away_xg, pred_scoreline,
+           pred_top_scorelines, pred_winner
+    FROM predictions
+    WHERE date = ?
+    ORDER BY home_team
+""", (str(tomorrow_utc),)).fetchall()
 
     st.markdown(f"### 🔮 Tomorrow — {tomorrow_utc.strftime('%B %d, %Y')}")
 
@@ -345,6 +346,14 @@ with tab3:
             fav = (r["home_team"] if hw == fav_prob
                    else r["away_team"] if aw == fav_prob
                    else "Draw")
+            top3 = json.loads(r["pred_top_scorelines"]) if r["pred_top_scorelines"] else [{"score": r["pred_scoreline"], "probability": 1.0}]
+            top3_html = "".join(
+                f'<span style="display:inline-block;background:#ffffff;border:1px solid #e2e8f0;'
+                f'border-radius:6px;padding:0.25rem 0.65rem;margin-right:0.4rem;margin-bottom:0.3rem;font-size:0.8rem;">'
+                f'<strong style="color:#0f172a;">{s["score"]}</strong> '
+                f'<span style="color:#16a34a;font-weight:600;">{s["probability"]:.0%}</span></span>'
+                for s in top3
+            )
             with cols[i % 2]:
                 st.markdown(f"""
                 <div class="card" style="border-top:3px solid #16a34a;margin-bottom:1rem;">
@@ -368,17 +377,16 @@ with tab3:
                             <div style="font-size:0.7rem;color:#94a3b8;">xG {r['pred_away_xg']}</div>
                         </div>
                     </div>
-                    <div style="background:#f8fafc;border-radius:6px;padding:0.5rem 0.75rem;
-                                display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-size:0.8rem;color:#64748b;">
-                            🎯 Likely score: <strong style="color:#0f172a;">{r['pred_scoreline']}</strong>
-                        </span>
-                        <span style="font-size:0.75rem;font-weight:700;color:#16a34a;">
-                            Tip: {fav} ({fav_prob:.0%})
-                        </span>
+                    <div style="background:#f8fafc;border-radius:6px;padding:0.6rem 0.75rem;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                            <span style="font-size:0.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">🎯 Likely Scorelines</span>
+                            <span style="font-size:0.75rem;font-weight:700;color:#16a34a;">Tip: {fav} ({fav_prob:.0%})</span>
+                        </div>
+                        <div>{top3_html}</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
+
 
     # ── Yesterday's results vs predictions ───────────────────────────────────
     st.markdown("<hr>", unsafe_allow_html=True)
@@ -387,7 +395,7 @@ with tab3:
     yesterday_rows = conn_p.execute("""
         SELECT home_team, away_team, stage, date,
                pred_home_win, pred_draw, pred_away_win,
-               pred_home_xg, pred_away_xg, pred_scoreline, pred_winner,
+               pred_home_xg, pred_away_xg, pred_scoreline, pred_top_scorelines, pred_winner,
                actual_home, actual_away, actual_result, was_correct
         FROM predictions
         WHERE date = ?

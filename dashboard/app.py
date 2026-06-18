@@ -254,38 +254,43 @@ with tab3:
             fav = (r["home_team"] if hw == fav_prob
                    else r["away_team"] if aw == fav_prob
                    else "Draw")
+            top3 = json.loads(r["pred_top_scorelines"]) if r["pred_top_scorelines"] else [{"score": r["pred_scoreline"], "probability": 1.0}]
+            top3_html = "".join(
+                f'<span style="display:inline-block;background:#ffffff;border:1px solid #e2e8f0;'
+                f'border-radius:6px;padding:0.25rem 0.65rem;margin-right:0.4rem;margin-bottom:0.3rem;font-size:0.8rem;">'
+                f'<strong style="color:#0f172a;">{s["score"]}</strong> '
+                f'<span style="color:#16a34a;font-weight:600;">{s["probability"]:.0%}</span></span>'
+                for s in top3
+            )
             with cols[i % 2]:
                 st.markdown(f"""
-                <div style="background:var(--card);border:1px solid var(--border);border-top:3px solid #00d26a;
-                            border-radius:10px;padding:1.2rem;margin-bottom:1rem;">
+                <div class="card" style="border-top:3px solid #16a34a;margin-bottom:1rem;">
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
-                        <span style="font-size:0.7rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">{r['stage']}</span>
-                        <span style="font-size:0.7rem;color:var(--muted);">{r['date']}</span>
+                        <span style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:1px;">{r['stage']}</span>
+                        <span style="font-size:0.7rem;color:#94a3b8;">{r['date']}</span>
                     </div>
                     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
                         <div style="text-align:center;flex:1;">
-                            <div style="font-size:0.95rem;font-weight:700;color:var(--text);">{r['home_team']}</div>
-                            <div style="font-size:1.4rem;font-weight:700;color:#00d26a;">{hw:.0%}</div>
-                            <div style="font-size:0.7rem;color:var(--muted);">xG {r['pred_home_xg']}</div>
+                            <div style="font-size:0.95rem;font-weight:700;color:#0f172a;">{r['home_team']}</div>
+                            <div style="font-size:1.4rem;font-weight:700;color:#16a34a;">{hw:.0%}</div>
+                            <div style="font-size:0.7rem;color:#94a3b8;">xG {r['pred_home_xg']}</div>
                         </div>
                         <div style="text-align:center;padding:0 0.5rem;">
-                            <div style="font-size:0.8rem;font-weight:700;color:var(--muted);">VS</div>
+                            <div style="font-size:0.8rem;font-weight:700;color:#94a3b8;">VS</div>
                             <div style="font-size:0.75rem;font-weight:600;color:#f59e0b;margin-top:0.2rem;">Draw {dr:.0%}</div>
                         </div>
                         <div style="text-align:center;flex:1;">
-                            <div style="font-size:0.95rem;font-weight:700;color:var(--text);">{r['away_team']}</div>
+                            <div style="font-size:0.95rem;font-weight:700;color:#0f172a;">{r['away_team']}</div>
                             <div style="font-size:1.4rem;font-weight:700;color:#ef4444;">{aw:.0%}</div>
-                            <div style="font-size:0.7rem;color:var(--muted);">xG {r['pred_away_xg']}</div>
+                            <div style="font-size:0.7rem;color:#94a3b8;">xG {r['pred_away_xg']}</div>
                         </div>
                     </div>
-                    <div style="background:#1e1e2e;border-radius:6px;padding:0.5rem 0.75rem;
-                                display:flex;justify-content:space-between;align-items:center;">
-                        <span style="font-size:0.8rem;color:var(--muted);">
-                            🎯 Likely score: <strong style="color:var(--text);">{r['pred_scoreline']}</strong>
-                        </span>
-                        <span style="font-size:0.75rem;font-weight:700;color:#00d26a;">
-                            Tip: {fav} ({fav_prob:.0%})
-                        </span>
+                    <div style="background:#f8fafc;border-radius:6px;padding:0.6rem 0.75rem;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.4rem;">
+                            <span style="font-size:0.72rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;">🎯 Likely Scorelines</span>
+                            <span style="font-size:0.75rem;font-weight:700;color:#16a34a;">Tip: {fav} ({fav_prob:.0%})</span>
+                        </div>
+                        <div>{top3_html}</div>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
