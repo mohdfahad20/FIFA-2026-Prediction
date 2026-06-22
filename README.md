@@ -13,9 +13,9 @@ An end-to-end machine learning system for predicting FIFA World Cup 2026 match o
 
 | Service | URL |
 |---------|-----|
-| Dashboard | [Streamlit Cloud](#) |
-| API | [Render](#) |
-| API Docs | [Render/docs](#) |
+| Dashboard | [Streamlit Cloud](https://fifa-2026-live-prediction.streamlit.app/) |
+| API | [Render](https://fifa-predictor-api-xjnm.onrender.com) |
+| API Docs | [Render/docs](https://fifa-predictor-api-xjnm.onrender.com/docs) |
 
 ---
 
@@ -164,7 +164,7 @@ Open `http://localhost:8501` for the dashboard, `http://localhost:8000/docs` for
 
 ## 🔌 API Endpoints
 
-Base URL: `https://your-render-url.onrender.com`
+Base URL: `https://fifa-predictor-api-xjnm.onrender.com`
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
