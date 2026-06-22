@@ -57,6 +57,7 @@ FD_TEAM_MAP: dict[str, str] = {
     "Cote d'Ivoire"          : "Ivory Coast",
     "Côte d'Ivoire"          : "Ivory Coast",
     "Cape Verde Islands"     : "Cape Verde",
+    "Congo DR"               : "DR Congo",
 }
 
 STAGE_MAP: dict[str, str] = {
@@ -69,6 +70,9 @@ STAGE_MAP: dict[str, str] = {
     "FINAL"               : "Final",
 }
 
+def make_match_id(date: str, home: str, away: str) -> str:
+    return f"{date}_{home}_{away}".replace(" ", "_")
+
 
 def _norm(name: str) -> str:
     return FD_TEAM_MAP.get(name.strip(), name.strip())
@@ -80,8 +84,8 @@ def _result(home: int, away: int) -> str:
     return "loss"
 
 
-def _match_id(date: str, home: str, away: str) -> str:
-    return f"{date}_{home}_{away}"
+# def _match_id(date: str, home: str, away: str) -> str:
+#     return f"{date}_{home}_{away}"
 
 
 class FDClient:
@@ -150,7 +154,7 @@ def _parse_match(m: dict) -> dict | None:
     stage = STAGE_MAP.get(m.get("stage", "") or "", m.get("stage", "") or "")
 
     return {
-        "match_id"   : _match_id(game_date, home_team, away_team),
+        "match_id"   : make_match_id(game_date, home_team, away_team),
         "date"       : game_date,
         "home_team"  : home_team,
         "away_team"  : away_team,
